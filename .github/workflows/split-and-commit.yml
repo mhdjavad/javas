@@ -1,19 +1,36 @@
-name: Download Large File as Artifact
-on: [workflow_dispatch]
+name: Append Large File to Repository
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'File URL to download'
+        required: true
+      name:
+        description: 'File name (without extension)'
+        required: true
+        default: 'large-file'
 
 jobs:
-  download:
+  append:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
     steps:
-      - name: Download 300MB file
-        run: |
-          curl -L -o large-file.bin "https://pdfobject.com/pdf/sample.pdf"
-          ls -lh large-file.bin
+      - uses: actions/checkout@v4
       
-      - name: Upload as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: large-file
-          path: large-file.bin
-          retention-days: 30  # Keep for 30 days
+      - name: Download and split file
+        run: |
+          curl -L -o "${{ inputs.name }}.bin" "${{ inputs.url }}"
+          split -b 90M "${{ inputs.name }}.bin" "${{ inputs.name }}_chunk_"
+          rm "${{ inputs.name }}.bin"
+          echo '#!/bin/bash' > "restore-${{ inputs.name }}.sh"
+          echo "cat ${{ inputs.name }}_chunk_* > ${{ inputs.name }}.bin" >> "restore-${{ inputs.name }}.sh"
+          chmod +x "restore-${{ inputs.name }}.sh"
+      
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "actions@github.com"
+          git add "${{ inputs.name }}_chunk_"* "restore-${{ inputs.name }}.sh"
+          git commit -m "Append ${{ inputs.name }}.bin (split into 90MB chunks)"
+          git push
