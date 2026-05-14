@@ -1,0 +1,19 @@
+name: Download Large File as Artifact
+on: [workflow_dispatch]
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download 300MB file
+        run: |
+          curl -L -o large-file.bin "https://pdfobject.com/pdf/sample.pdf"
+          ls -lh large-file.bin
+      
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: large-file
+          path: large-file.bin
+          retention-days: 30  # Keep for 30 days
