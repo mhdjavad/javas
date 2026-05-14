@@ -20,17 +20,69 @@ jobs:
       
       - name: Download and split file
         run: |
-          curl -L -o "${{ inputs.name }}.bin" "${{ inputs.url }}"
-          split -b 90M "${{ inputs.name }}.bin" "${{ inputs.name }}_chunk_"
+          # Download with error handling and follow redirects
+          curl -L --fail -o "${{ inputs.name }}.bin" "${{ inputs.url }}"
+          
+          # Check if download was successful
+          if [ ! -f "${{ inputs.name }}.bin" ]; then
+            echo "Error: Download failed"
+            exit 1
+          fi
+          
+          # Show file size
+          echo "Downloaded file size:"
+          ls -lh "${{ inputs.name }}.bin"
+          
+          # Create directory for chunks (optional)
+          mkdir -p chunks
+          
+          # Split the file into 90MB chunks
+          split -b 90M "${{ inputs.name }}.bin" "chunks/${{ inputs.name }}_chunk_"
+          
+          # Count chunks
+          CHUNK_COUNT=$(ls chunks/${{ inputs.name }}_chunk_* | wc -l)
+          echo "Created $CHUNK_COUNT chunks"
+          
+          # Remove original file
           rm "${{ inputs.name }}.bin"
-          echo '#!/bin/bash' > "restore-${{ inputs.name }}.sh"
-          echo "cat ${{ inputs.name }}_chunk_* > ${{ inputs.name }}.bin" >> "restore-${{ inputs.name }}.sh"
+          
+          # Create restore script
+          cat > "restore-${{ inputs.name }}.sh" << 'EOF'
+          #!/bin/bash
+          # Restore script for ${{ inputs.name }}.bin
+          
+          echo "Reassembling ${{ inputs.name }}.bin..."
+          cat chunks/${{ inputs.name }}_chunk_* > "${{ inputs.name }}.bin"
+          echo "Done! File restored as: ${{ inputs.name }}.bin"
+          ls -lh "${{ inputs.name }}.bin"
+          EOF
+          
           chmod +x "restore-${{ inputs.name }}.sh"
+          
+          # Create README with instructions
+          cat > "README-${{ inputs.name }}.md" << EOF
+          # ${{ inputs.name }}.bin
+          
+          This 300MB file was split into $CHUNK_COUNT chunks (90MB each) due to GitHub's 100MB file size limit.
+          
+          ## To restore the original file:
+          \`\`\`bash
+          ./restore-${{ inputs.name }}.sh
+          \`\`\`
+          
+          Or manually:
+          \`\`\`bash
+          cat chunks/${{ inputs.name }}_chunk_* > ${{ inputs.name }}.bin
+          \`\`\`
+          
+          Original source: ${{ inputs.url }}
+          Added on: $(date)
+          EOF
       
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "actions@github.com"
-          git add "${{ inputs.name }}_chunk_"* "restore-${{ inputs.name }}.sh"
-          git commit -m "Append ${{ inputs.name }}.bin (split into 90MB chunks)"
+          git add chunks/ restore-${{ inputs.name }}.sh README-${{ inputs.name }}.md
+          git commit -m "Append ${{ inputs.name }}.bin (split into 90MB chunks)" || echo "No changes to commit"
           git push
